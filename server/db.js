@@ -2,13 +2,19 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 
+// ─── CONFIGURATION & PATH RESOLUTION ─────────────────────────────────────────
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const DATA_DIR = path.join(__dirname, "data");
 const DATA_FILE = path.join(DATA_DIR, "students.json");
 
-// ─── DATA GENERATION ENGINE (Ported from Frontend) ───────────────────────────
+/**
+ * Seeded pseudo-random number generator.
+ * Provides deterministic behavior based on a given seed.
+ * @param {number} seed - The seed value to initialize the sequence.
+ * @returns {function} A function that returns a value between 0 and 1.
+ */
 function seededRandom(seed) {
   let s = seed;
   return () => {
