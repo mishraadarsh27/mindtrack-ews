@@ -1,11 +1,15 @@
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, createContext, useContext } from "react";
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, RadarChart, PolarGrid,
   PolarAngleAxis, Radar, AreaChart, Area, ScatterChart, Scatter,
   ZAxis, Cell, PieChart, Pie
 } from "recharts";
+
+// ─── DATA CONTEXT ───────────────────────────────────────────────────────────
+const StudentsContext = createContext();
+export const useStudents = () => useContext(StudentsContext);
 
 // ─── DESIGN SYSTEM ──────────────────────────────────────────────────────────
 const colors = {
@@ -25,89 +29,10 @@ const colors = {
   high: "#F7724F",
 };
 
-// ─── DATA GENERATION ENGINE ──────────────────────────────────────────────────
-function seededRandom(seed) {
-  let s = seed;
-  return () => {
-    s = (s * 16807 + 0) % 2147483647;
-    return (s - 1) / 2147483646;
-  };
-}
-
-function generateStudent(id, seed) {
-  const rng = seededRandom(seed + id * 1337);
-  const riskLevel = rng() < 0.15 ? "high" : rng() < 0.35 ? "medium" : "low";
-  const isHighRisk = riskLevel === "high";
-  const isMedRisk = riskLevel === "medium";
-
-  const names = ["Alex Chen","Jordan Park","Sam Rivera","Taylor Kim","Morgan Lee",
-    "Casey Liu","Riley Wang","Drew Patel","Avery Singh","Quinn Zhao","Blake Torres",
-    "Sage Nguyen","Reese Yamamoto","Cameron Okafor","Dakota Ivanov","Skylar Mehta",
-    "Hayden Costa","Peyton Andersson","Rowan Ferreira","Finley Nakamura"];
-  const majors = ["Computer Science","Psychology","Biology","Engineering","Business",
-    "Mathematics","Sociology","Chemistry","Economics","Philosophy"];
-  const name = names[id % names.length];
-  const major = majors[id % majors.length];
-  const year = Math.floor(rng() * 4) + 1;
-
-  // Generate 16 weeks of data
-  const weeks = Array.from({ length: 16 }, (_, w) => {
-    const weekRng = seededRandom(seed + id * 999 + w * 77);
-    const stressEvent = isHighRisk && w > 5 && weekRng() < 0.6;
-    const gradualDecline = isHighRisk ? (w > 4 ? (w - 4) * 0.03 : 0) : 0;
-
-    return {
-      week: w + 1,
-      grade: Math.max(20, Math.min(100, 78 + (isHighRisk ? -15 : isMedRisk ? -5 : 5) * (w / 16) + (weekRng() - 0.5) * 18 - gradualDecline * 15)),
-      attendance: Math.max(0, Math.min(1, 0.92 - (isHighRisk ? 0.35 : isMedRisk ? 0.12 : 0) * (w / 16) + (weekRng() - 0.5) * 0.1)),
-      lateSubmissions: Math.min(1, (isHighRisk ? 0.4 : isMedRisk ? 0.15 : 0.05) + gradualDecline * 0.5 + weekRng() * 0.15),
-      forumPosts: Math.max(0, Math.round((isHighRisk ? 1 : isMedRisk ? 3 : 6) - gradualDecline * 3 + (weekRng() - 0.3) * 3)),
-      offHoursActivity: Math.min(1, (isHighRisk ? 0.45 : isMedRisk ? 0.2 : 0.08) + gradualDecline * 0.3 + weekRng() * 0.12),
-      sleepScore: Math.max(1, Math.min(10, (isHighRisk ? 4 : isMedRisk ? 6 : 8) + (weekRng() - 0.5) * 2 - gradualDecline * 2)),
-      stressScore: Math.min(10, (isHighRisk ? 7.5 : isMedRisk ? 5 : 2.5) + gradualDecline * 2 + (weekRng() - 0.5) * 2),
-    };
-  });
-
-  // Compute risk score from features
-  const latest = weeks[weeks.length - 1];
-  const prev = weeks[Math.max(0, weeks.length - 4)];
-  const gradeTrend = (latest.grade - prev.grade) / 4;
-  const attendDrop = prev.attendance - latest.attendance;
-  const lateRatio = latest.lateSubmissions;
-  const engagementDrop = (prev.forumPosts - latest.forumPosts) / Math.max(1, prev.forumPosts);
-  const offHours = latest.offHoursActivity;
-
-  const rawScore = (
-    lateRatio * 0.25 +
-    Math.max(0, -gradeTrend / 5) * 0.25 +
-    attendDrop * 0.2 +
-    Math.max(0, engagementDrop) * 0.15 +
-    offHours * 0.15
-  );
-  const riskScore = Math.min(10, Math.max(0.5, rawScore * 12 + (rng() - 0.5)));
-
-  // SHAP-like feature contributions
-  const factors = [
-    { factor: "Late Submissions", impact: lateRatio * 0.25 * 12, description: `${Math.round(lateRatio * 100)}% late rate` },
-    { factor: "Grade Trend", impact: Math.max(0, -gradeTrend / 5) * 0.25 * 12, description: `${gradeTrend > 0 ? "+" : ""}${gradeTrend.toFixed(1)} pts/wk` },
-    { factor: "Attendance Drop", impact: attendDrop * 0.2 * 12, description: `${Math.round(attendDrop * 100)}% decrease` },
-    { factor: "Forum Activity", impact: Math.max(0, engagementDrop) * 0.15 * 12, description: `${latest.forumPosts} posts/wk` },
-    { factor: "Off-Hours Activity", impact: offHours * 0.15 * 12, description: `${Math.round(offHours * 100)}% late logins` },
-  ].sort((a, b) => b.impact - a.impact);
-
-  return {
-    id, name, major, year,
-    hash: `STU${String(id).padStart(4, "0")}`,
-    riskScore: parseFloat(riskScore.toFixed(2)),
-    riskLevel: riskScore > 6.5 ? "high" : riskScore > 3.5 ? "medium" : "low",
-    weeks, factors, latest,
-    interventionOffered: isHighRisk && rng() > 0.4,
-    interventionAccepted: isHighRisk && rng() > 0.6,
-    email: `${name.split(" ")[0].toLowerCase()}@university.edu`,
-  };
-}
-
-const STUDENTS = Array.from({ length: 40 }, (_, i) => generateStudent(i, 42));
+// ─── DATABASE MIGRATION NOTE ────────────────────────────────────────────────
+// The data generation engine and mock student datasets have been migrated 
+// to the backend server (server/db.js). The frontend now fetches all student 
+// data dynamically via REST API.
 
 // ─── HELPER COMPONENTS ───────────────────────────────────────────────────────
 
@@ -392,6 +317,7 @@ function StudentView({ student }) {
 }
 
 function FacultyView() {
+  const { students: STUDENTS } = useStudents();
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
   const [selected, setSelected] = useState(null);
@@ -502,6 +428,7 @@ function FacultyView() {
 }
 
 function AdminView() {
+  const { students: STUDENTS } = useStudents();
   const riskDist = [
     { name: "Low Risk", value: STUDENTS.filter(s => s.riskLevel === "low").length, color: colors.low },
     { name: "Medium Risk", value: STUDENTS.filter(s => s.riskLevel === "medium").length, color: colors.medium },
@@ -699,29 +626,37 @@ function MLView() {
   const runSimulation = useCallback(async () => {
     setRunning(true);
     setResults(null);
-    const phases = [
-      [5, "Loading synthetic dataset (500 students, 120 days)…"],
-      [15, "Feature engineering: computing academic signals…"],
-      [25, "Feature engineering: behavioral change indicators…"],
-      [35, "Preprocessing: scaling, train/test split (time-based)…"],
-      [50, "Training XGBoost classifier (200 estimators)…"],
-      [65, "Building LSTM sequences (lookback=28 days)…"],
-      [78, "Training LSTM model (50 epochs)…"],
-      [88, "Computing ensemble predictions (0.6 XGB + 0.4 LSTM)…"],
-      [95, "Running SHAP analysis and fairness checks…"],
-      [100, "Complete! Models ready for inference."],
-    ];
-    for (const [p, msg] of phases) {
-      await new Promise(r => setTimeout(r, 300 + Math.random() * 400));
-      setProgress(p);
-      setPhase(msg);
+    
+    // Simulate frontend progress for visual dashboard feedback
+    const progressPromise = (async () => {
+      const phases = [
+        [5, "Loading synthetic dataset (500 students, 120 days)…"],
+        [15, "Feature engineering: computing academic signals…"],
+        [25, "Feature engineering: behavioral change indicators…"],
+        [35, "Preprocessing: scaling, train/test split (time-based)…"],
+        [50, "Training XGBoost classifier (200 estimators)…"],
+        [65, "Building LSTM sequences (lookback=28 days)…"],
+        [78, "Training LSTM model (50 epochs)…"],
+        [88, "Computing ensemble predictions (0.6 XGB + 0.4 LSTM)…"],
+        [95, "Running SHAP analysis and fairness checks…"],
+        [100, "Complete! Models ready for inference."],
+      ];
+      for (const [p, msg] of phases) {
+        await new Promise(r => setTimeout(r, 150 + Math.random() * 150));
+        setProgress(p);
+        setPhase(msg);
+      }
+    })();
+
+    try {
+      const apiPromise = fetch("/api/train", { method: "POST" }).then((res) => res.json());
+      const [, backendResults] = await Promise.all([progressPromise, apiPromise]);
+      setResults(backendResults);
+    } catch (err) {
+      alert("Training simulation failed: " + err.message);
+    } finally {
+      setRunning(false);
     }
-    setRunning(false);
-    setResults({
-      xgb: { auc: 0.762, precision: 0.71, recall: 0.64, f1: 0.675, trainTime: "2.3s" },
-      lstm: { auc: 0.789, precision: 0.74, recall: 0.68, f1: 0.709, trainTime: "18.7s" },
-      ensemble: { auc: 0.813, precision: 0.78, recall: 0.72, f1: 0.749, trainTime: "21.2s" },
-    });
   }, []);
 
   const rocData = Array.from({ length: 21 }, (_, i) => {
@@ -881,24 +816,25 @@ function LivePredictor() {
   });
   const [result, setResult] = useState(null);
 
-  const computeRisk = () => {
-    const { gradeSlope, lateRatio, attendanceDrop, forumPosts, offHours, sleepScore, stressScore } = form;
-    const raw = (
-      lateRatio * 0.25 +
-      Math.max(0, -gradeSlope / 5) * 0.25 +
-      attendanceDrop * 0.2 +
-      Math.max(0, (5 - forumPosts) / 5) * 0.15 +
-      offHours * 0.15
-    );
-    const sleepBonus = (10 - sleepScore) * 0.04;
-    const stressBonus = stressScore * 0.05;
-    const score = Math.min(10, Math.max(0.5, raw * 12 + sleepBonus + stressBonus));
-    setResult({
-      score: parseFloat(score.toFixed(2)),
-      level: score > 6.5 ? "high" : score > 3.5 ? "medium" : "low",
-      xgb: parseFloat((score * 0.93 + Math.random() * 0.4).toFixed(2)),
-      lstm: parseFloat((score * 0.97 + Math.random() * 0.3).toFixed(2)),
-    });
+  const computeRisk = async () => {
+    try {
+      const response = await fetch("/api/predict", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(form),
+      });
+
+      if (!response.ok) {
+        throw new Error("Prediction API call failed.");
+      }
+
+      const data = await response.json();
+      setResult(data);
+    } catch (err) {
+      alert("Error predicting risk score: " + err.message);
+    }
   };
 
   const sliders = [
@@ -1004,11 +940,114 @@ const TABS = [
   { id: "predictor", label: "⚡ Live Predictor", desc: "Real-time inference" },
 ];
 
+const parseCSV = (text) => {
+  const lines = text.trim().split('\n');
+  const headers = lines[0].split(',').map(h => h.trim());
+  return lines.slice(1).map(line => {
+    const values = line.split(',');
+    const obj = {};
+    headers.forEach((h, i) => {
+      if (h) obj[h] = values[i] ? values[i].trim() : null;
+    });
+    return obj;
+  });
+};
+
 export default function App() {
   const [tab, setTab] = useState("admin");
   const [myStudentIdx, setMyStudentIdx] = useState(0);
+  const [studentsData, setStudentsData] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch("/api/students")
+      .then((res) => {
+        if (!res.ok) throw new Error("Could not retrieve students from server.");
+        return res.json();
+      })
+      .then((data) => {
+        setStudentsData(data);
+        setLoading(false);
+      })
+      .catch((err) => {
+        console.error(err);
+        setLoading(false);
+      });
+  }, []);
+
+  const handleFileUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const isCsv = file.name.toLowerCase().endsWith('.csv');
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      try {
+        const text = evt.target.result;
+        let parsed = isCsv ? parseCSV(text) : JSON.parse(text);
+        if (!Array.isArray(parsed)) throw new Error("Data must be an array of objects.");
+
+        const response = await fetch("/api/students/import", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(parsed),
+        });
+
+        if (!response.ok) {
+          const errData = await response.json();
+          throw new Error(errData.error || "Failed to import database records.");
+        }
+
+        const resData = await response.json();
+        setStudentsData(resData.students);
+        setMyStudentIdx(0);
+        alert(resData.message);
+      } catch (err) {
+        alert("Error importing file: " + err.message);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = null;
+  };
+
+  const downloadTemplate = () => {
+    const template = [
+      { name: "Alice Test", major: "Computer Science", year: 3, grade: 92, attendance: 0.95 },
+      { name: "Bob Mock", major: "Physics", year: 2, grade: 76, attendance: 0.82 }
+    ];
+    const blob = new Blob([JSON.stringify(template, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "mindtrack_template.json";
+    a.click();
+  };
+
+  if (loading) {
+    return (
+      <div style={{
+        minHeight: "100vh", background: colors.bg,
+        display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center",
+        fontFamily: "'DM Sans', sans-serif", color: colors.text
+      }}>
+        <div style={{
+          width: 50, height: 50, borderRadius: "50%",
+          border: `3px solid ${colors.border}`, borderTopColor: colors.accent1,
+          animation: "spin 1s linear infinite"
+        }} />
+        <style>{`
+          @keyframes spin {
+            to { transform: rotate(360deg); }
+          }
+        `}</style>
+        <p style={{ marginTop: 20, color: colors.muted, fontSize: 14 }}>Connecting to MindTrack Database...</p>
+      </div>
+    );
+  }
 
   return (
+    <StudentsContext.Provider value={{ students: studentsData, setStudents: setStudentsData }}>
     <div style={{
       minHeight: "100vh", background: colors.bg,
       fontFamily: "'DM Mono', 'Fira Code', 'Courier New', monospace",
@@ -1063,16 +1102,29 @@ export default function App() {
             ))}
           </div>
 
-          {/* Status */}
-          <div style={{
-            display: "flex", alignItems: "center", gap: 6, padding: "0 16px",
-            fontSize: 11, color: colors.accent2,
-          }}>
-            <span style={{
-              width: 8, height: 8, borderRadius: "50%", background: colors.accent2,
-              animation: "pulse 2s ease-in-out infinite",
-            }} />
-            LIVE
+          {/* File Actions */}
+          <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "0 16px" }}>
+            <button onClick={downloadTemplate} style={{
+              background: "transparent", border: `1px solid ${colors.border}`,
+              borderRadius: 8, padding: "6px 12px", color: colors.text,
+              fontSize: 12, cursor: "pointer",
+            }}>📄 Template</button>
+            <input type="file" id="data-upload" accept=".json,.csv" onChange={handleFileUpload} style={{ display: "none" }} />
+            <label htmlFor="data-upload" style={{
+              background: colors.card, border: `1px solid ${colors.border}`,
+              borderRadius: 8, padding: "6px 12px", color: colors.text,
+              fontSize: 12, cursor: "pointer", fontWeight: 600,
+            }}>📁 Upload Data</label>
+            <div style={{
+              display: "flex", alignItems: "center", gap: 6,
+              fontSize: 11, color: colors.accent2, marginLeft: 8
+            }}>
+              <span style={{
+                width: 8, height: 8, borderRadius: "50%", background: colors.accent2,
+                animation: "pulse 2s ease-in-out infinite",
+              }} />
+              LIVE
+            </div>
           </div>
         </div>
       </div>
@@ -1089,8 +1141,8 @@ export default function App() {
                   padding: "8px 12px", color: colors.text, fontSize: 13, cursor: "pointer",
                   fontFamily: "inherit",
                 }}>
-                {STUDENTS.map((s, i) => (
-                  <option key={i} value={i}>{s.name} ({s.riskLevel.toUpperCase()} — {s.riskScore}/10)</option>
+                {studentsData.map((s, i) => (
+                  <option key={i} value={i}>{s.name} ({s.riskLevel ? s.riskLevel.toUpperCase() : 'UNKNOWN'} — {s.riskScore ?? 'N/A'}/10)</option>
                 ))}
               </select>
             </div>
@@ -1099,10 +1151,11 @@ export default function App() {
 
         {tab === "admin" && <AdminView />}
         {tab === "faculty" && <FacultyView />}
-        {tab === "student" && <StudentView student={STUDENTS[myStudentIdx]} />}
+        {tab === "student" && <StudentView student={studentsData[myStudentIdx] || studentsData[0]} />}
         {tab === "ml" && <MLView />}
         {tab === "predictor" && <LivePredictor />}
       </div>
     </div>
+    </StudentsContext.Provider>
   );
 }
