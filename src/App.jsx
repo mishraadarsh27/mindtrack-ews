@@ -1013,8 +1013,10 @@ export default function App() {
 
   const downloadTemplate = () => {
     const template = [
-      { name: "Alice Test", major: "Computer Science", year: 3, grade: 92, attendance: 0.95 },
-      { name: "Bob Mock", major: "Physics", year: 2, grade: 76, attendance: 0.82 }
+      { name: "Alice Smith", major: "Computer Science", year: 3, grade: 92, attendance: 0.95 },
+      { name: "Bob Johnson", major: "Physics", year: 2, grade: 76, attendance: 0.82 },
+      { name: "Clara Davis", major: "Business", year: 1, grade: 85, attendance: 0.88 },
+      { name: "David Wilson", major: "Biology", year: 4, grade: 64, attendance: 0.70 }
     ];
     const blob = new Blob([JSON.stringify(template, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
